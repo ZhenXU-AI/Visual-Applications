@@ -1,1 +1,82 @@
+###9.0版本
+###这段代码的主要功能是通过摄像头实时检测手部，当拇指和食指捏合时，绘制捏合轨迹；当拇指和食指分开时，停止绘制轨迹。它可以用于实时捕捉手势，并在屏幕上显示手部轨迹。
 
+# 这段代码实现了以下功能：
+
+# 导入必要的库，包括OpenCV、MediaPipe和NumPy。
+# 创建了一个MediaPipe Hands实例，用于手部检测和关键点识别。
+# 打开摄像头。
+# 进入循环，读取摄像头捕获的帧。
+# 将帧从BGR格式转换为RGB格式，以便用于MediaPipe处理。
+# 使用手部模型处理图像，获取手部关键点和手势结果。
+# 如果检测到手部，绘制关键点和手部轮廓。
+# 监测捏合动作，通过计算拇指和食指之间的距离来判断是否捏合。
+# 如果距离小于阈值（0.03），表示捏合动作开始。
+# 记录食指位置，并绘制捏合轨迹。
+# 如果距离大于阈值，表示捏合动作结束，重置标志位和轨迹。
+# 在窗口中显示帧。
+# 如果按下ESC键，退出循环。
+# 释放摄像头资源并关闭所有OpenCV窗口。
+
+import cv2
+import mediapipe as mp
+import numpy as np
+
+# 初始化手部模型
+mp_drawing = mp.solutions.drawing_utils
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.5, min_tracking_confidence=0.5)
+
+# 打开摄像头
+cap = cv2.VideoCapture(0)
+if not cap.isOpened():  # 检查摄像头是否成功打开
+    print("无法打开摄像头")
+    exit()
+
+is_pinch_action_started = False
+pinch_trajectory = []
+
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:  # 检查是否成功读取帧
+        break
+
+    # 将图像从BGR转换为RGB格式，因为mediapipe需要RGB格式的图像
+    image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    # 使用手部模型处理图像
+    results = hands.process(image)
+
+    # 如果检测到手部，绘制关键点和轮廓
+    if results.multi_hand_landmarks:
+        for hand_landmarks in results.multi_hand_landmarks:
+            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+            # 监测捏合动作
+            thumb_tip = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
+            index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+
+            pinch_distance = np.sqrt((thumb_tip.x - index_tip.x)**2 + (thumb_tip.y - index_tip.y)**2)
+            if pinch_distance < 0.07:
+                # 当食指和拇指距离小于0.1时表示捏合动作开始
+                if not is_pinch_action_started:
+                    # 开始捏合动作，设置标志位并记录起始点
+                    is_pinch_action_started = True
+                    pinch_trajectory = [(int(index_tip.x * frame.shape[1]), int(index_tip.y * frame.shape[0]))]
+
+                # 绘制捏合轨迹点，这里使用食指尖点作为轨迹点，并画线连接它们
+                pinch_trajectory.append((int(index_tip.x * frame.shape[1]), int(index_tip.y * frame.shape[0])))
+                for i in range(1, len(pinch_trajectory)):
+                    cv2.line(frame, pinch_trajectory[i-1], pinch_trajectory[i], (0, 255, 0), 2)
+            else:
+                # 捏合动作结束，重置标志位和轨迹
+                is_pinch_action_started = False
+                pinch_trajectory = []
+
+    cv2.imshow('MediaPipe Hands', frame)
+    if cv2.waitKey(5) & 0xFF == 27:  # 按ESC键退出循环
+        break
+
+# 释放摄像头资源并关闭所有OpenCV窗口
+cap.release()
+cv2.destroyAllWindows()
